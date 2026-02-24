@@ -1,12 +1,8 @@
 import "dotenv/config";
 import { Bot, webhookCallback } from "grammy";
 import { loadBirthdays } from "./data/loadBirthdays.js";
-import {
-  buildBirthdayMessage,
-  formatChance,
-  getTodaysBirthdays
-} from "./birthday/checker.js";
-import { toDayMonthString } from "./utils/date.js";
+import { buildBirthdayMessage, getTodaysBirthdays } from "./birthday/checker.js";
+import { buildUpcomingMessage } from "./birthday/schedule.js";
 
 const token = process.env.BOT_TOKEN;
 if (!token) {
@@ -55,60 +51,12 @@ async function sendTomorrowReport() {
   if (!chatId) {
     return;
   }
-  const now = new Date();
   const records = getRecords();
-  const datesToCheck = getDatesToCheck(now);
-  const birthdays = collectBirthdaysForDates(records, datesToCheck);
-  const pizzaMonday = datesToCheck.some(isFirstMonday);
-  const message = buildScheduleMessage(birthdays, pizzaMonday);
+  const message = buildUpcomingMessage(records, new Date());
   if (!message) {
     return;
   }
   await bot.api.sendMessage(chatId, message);
-}
-
-function addDays(date, days) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-}
-
-function getDatesToCheck(now) {
-  const dayOfWeek = now.getDay();
-  if (dayOfWeek === 5) {
-    return [addDays(now, 1), addDays(now, 2)];
-  }
-  return [addDays(now, 1)];
-}
-
-function collectBirthdaysForDates(records, dates) {
-  return dates.flatMap((date) => {
-    const matches = getTodaysBirthdays(records, date);
-    return matches.map((record) => ({ ...record, date }));
-  });
-}
-
-function buildScheduleMessage(items, pizzaMonday) {
-  if (!items.length && !pizzaMonday) {
-    return null;
-  }
-  const lines = [];
-  if (items.length) {
-    lines.push("Ближайшие дни рождения:");
-    for (const item of items) {
-      const chance = formatChance(item.chance);
-      const dateLabel = toDayMonthString(item.date);
-      lines.push(`• ${item.name} — ${dateLabel} — вероятность пиццы: ${chance}`);
-    }
-  }
-  if (pizzaMonday) {
-    lines.push("\nПицца-понедельник: в офисе покупают пиццу.");
-  }
-  return lines.join("\n");
-}
-
-function isFirstMonday(date) {
-  return date.getDay() === 1 && date.getDate() <= 7;
 }
 
 function scheduleDailyCheck() {
