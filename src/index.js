@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { Bot } from "grammy";
+import { Bot, webhookCallback } from "grammy";
 import { loadBirthdays } from "./data/loadBirthdays.js";
 import {
   buildBirthdayMessage,
@@ -17,6 +17,10 @@ if (!token) {
 const filePath = process.env.BIRTHDAYS_FILE || "./data/birthdays.csv";
 const chatId = process.env.CHAT_ID;
 const dailyCheckTime = process.env.DAILY_CHECK_TIME || "09:00";
+const webhookUrl = process.env.WEBHOOK_URL;
+const webhookPath = process.env.WEBHOOK_PATH || "/bot";
+const webhookSecret = process.env.WEBHOOK_SECRET;
+const port = Number(process.env.PORT || 3000);
 
 function getRecords() {
   return loadBirthdays(filePath);
@@ -127,6 +131,33 @@ function scheduleDailyCheck() {
   scheduleNextRun();
 }
 
+async function startWebhookServer() {
+  const { createServer } = await import("node:http");
+  const callback = webhookCallback(bot, "http");
+
+  await bot.api.setWebhook(webhookUrl, {
+    secret_token: webhookSecret
+  });
+
+  const server = createServer(async (req, res) => {
+    if (req.method !== "POST" || req.url !== webhookPath) {
+      res.statusCode = 404;
+      res.end("Not found");
+      return;
+    }
+    if (webhookSecret && req.headers["x-telegram-bot-api-secret-token"] !== webhookSecret) {
+      res.statusCode = 401;
+      res.end("Unauthorized");
+      return;
+    }
+    await callback(req, res);
+  });
+
+  server.listen(port, () => {
+    console.log(`Webhook server listening on port ${port} at ${webhookPath}`);
+  });
+}
+
 const bot = new Bot(token);
 
 bot.command("start", (ctx) => ctx.reply("Напишите /today чтобы узнать про пиццу."));
@@ -148,4 +179,11 @@ bot.catch((error) => {
 });
 
 scheduleDailyCheck();
-bot.start();
+if (webhookUrl) {
+  startWebhookServer().catch((error) => {
+    console.error("Webhook start error:", error);
+    process.exit(1);
+  });
+} else {
+  bot.start();
+}
